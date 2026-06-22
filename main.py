@@ -331,9 +331,9 @@ def main():
             
             selected_strategy = st.selectbox(
                 "기본 DRM 우회 전략", 
-                ["Acrobat", "Word"], 
-                index=0 if st.session_state.drm_strategy == "Acrobat" else 1,
-                help="Acrobat은 원본 유지가 잘 되지만 버전에 따라 백그라운드 저장이 막힐 수 있습니다. Word는 가장 확실하지만 레이아웃이 변형될 수 있습니다."
+                ["Acrobat", "Word (Print)", "Word"], 
+                index=0 if st.session_state.drm_strategy == "Acrobat" else (1 if st.session_state.drm_strategy == "Word (Print)" else 2),
+                help="Acrobat은 원본 유지가 잘 되지만 버전에 따라 백그라운드 저장이 막힐 수 있습니다. Word (Print)는 Microsoft Print to PDF 가상 프린터를 사용하여 강력한 화면 캡처 방지 및 재암호화를 완벽히 우회합니다. Word는 가장 확실하지만 레이아웃이 변형될 수 있습니다."
             )
             
             selected_visible = st.checkbox(

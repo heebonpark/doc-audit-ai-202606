@@ -70,6 +70,38 @@ def _run_word_com_process(target_file, unlocked_path, visible, result_dict):
         result_dict["error"] = str(e)
 
 
+def _run_word_print_com_process(target_file, unlocked_path, visible, result_dict):
+    """
+    Isolated process function for MS Word COM using Microsoft Print to PDF.
+    This bypasses most DRM re-encryption on 'SaveAs' by rendering the PDF via OS print spooler.
+    """
+    try:
+        import win32com.client
+        import pythoncom
+        pythoncom.CoInitialize()
+        
+        word = win32com.client.DispatchEx("Word.Application")
+        word.Visible = visible
+        word.DisplayAlerts = -1 if visible else 0 
+        
+        doc = word.Documents.Open(target_file, ConfirmConversions=False)
+        
+        # Switch printer and print to file
+        original_printer = word.ActivePrinter
+        try:
+            word.ActivePrinter = "Microsoft Print to PDF"
+            doc.PrintOut(OutputFileName=unlocked_path, PrintToFile=True)
+        finally:
+            word.ActivePrinter = original_printer
+            
+        doc.Close()
+        if not visible:
+            word.Quit()
+            
+        pythoncom.CoUninitialize()
+        result_dict["success"] = True
+    except Exception as e:
+        result_dict["error"] = str(e)
 class SmartDRMEngine:
     def __init__(self, primary_strategy="Acrobat", visible=False):
         self.primary_strategy = primary_strategy
@@ -140,6 +172,14 @@ class SmartDRMEngine:
             res["message"] = f"MS Word 실패: {res.get('message')}"
         return res
 
+    def _strategy_word_print(self, target_file: str, unlocked_path: str) -> dict:
+        res = self._run_with_timeout(_run_word_print_com_process, target_file, unlocked_path)
+        if res["success"]:
+            res["message"] = "MS Word 가상 인쇄(Print to PDF)로 DRM 완전 우회 성공!"
+        else:
+            res["message"] = f"Word 인쇄 실패: {res.get('message')}"
+        return res
+
     def _strategy_guided_manual(self, target_file: str) -> dict:
         try:
             webbrowser.open(target_file)
@@ -185,9 +225,11 @@ class SmartDRMEngine:
         # 2. Priority Strategy
         strategies = []
         if self.primary_strategy == "Acrobat":
-            strategies = [self._strategy_acrobat, self._strategy_word]
+            strategies = [self._strategy_acrobat, self._strategy_word_print, self._strategy_word]
+        elif self.primary_strategy == "Word (Print)":
+            strategies = [self._strategy_word_print, self._strategy_acrobat, self._strategy_word]
         else:
-            strategies = [self._strategy_word, self._strategy_acrobat]
+            strategies = [self._strategy_word, self._strategy_word_print, self._strategy_acrobat]
             
         for strategy_func in strategies:
             res = strategy_func(target_file, unlocked_path)
