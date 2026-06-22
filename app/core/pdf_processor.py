@@ -41,7 +41,31 @@ def process_pdf_stream(file_bytes: bytes, password: str = None) -> dict:
         for page_num in range(len(doc)):
             page = doc[page_num]
             # Get plain text
-            text = page.get_text("text")
+            text = page.get_text("text").strip()
+            
+            # If text is too short or looks like a typical watermark, run OCR on images
+            if len(text) < 50 or "지원팀" in text or "워터마크" in text or "박희본" in text:
+                image_list = page.get_images(full=True)
+                if image_list:
+                    try:
+                        import easyocr
+                        # Suppress verbose output
+                        import logging
+                        logging.getLogger('easyocr').setLevel(logging.ERROR)
+                        
+                        reader = easyocr.Reader(['ko', 'en'], gpu=False, verbose=False)
+                        ocr_text = []
+                        for img_info in image_list:
+                            xref = img_info[0]
+                            base_image = doc.extract_image(xref)
+                            image_bytes = base_image["image"]
+                            res = reader.readtext(image_bytes, detail=0)
+                            ocr_text.extend(res)
+                        
+                        text += "\n" + " ".join(ocr_text)
+                    except ImportError:
+                        text += "\n[OCR 엔진(easyocr)이 설치되지 않아 이미지 텍스트를 읽을 수 없습니다]"
+            
             result["text_content"].append({
                 "page": page_num + 1,
                 "text": text
