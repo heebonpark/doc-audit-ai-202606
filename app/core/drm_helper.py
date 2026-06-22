@@ -143,7 +143,7 @@ class SmartDRMEngine:
     def _strategy_guided_manual(self, target_file: str) -> dict:
         try:
             webbrowser.open(target_file)
-            return {"success": False, "requires_manual": True, "message": f"자동 우회 실패. 뷰어가 열렸습니다. 수동으로 '다른 이름으로 저장'을 수행해 주세요."}
+            return {"success": False, "requires_manual": True, "message": f"백그라운드 자동 우회 실패! 원본 뷰어가 화면에 열렸습니다. 뷰어에서 [파일] -> [다른 이름으로 저장]을 통해 암호가 풀린 새 PDF로 바탕화면에 저장한 뒤, 상단의 [📄 단일 파일 수동 업로드 검증] 탭에 드래그 앤 드롭 해주세요."}
         except Exception as e:
             return {"success": False, "message": f"수동 열기 실패: {e}"}
 

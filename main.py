@@ -12,6 +12,7 @@ from app.core.vision_detector import SignatureDetector
 from app.core.llm_verifier import LocalLLMVerifier
 from app.core.ml_analyzer import MLAnomalyDetector
 from app.core.drm_helper import SmartDRMEngine
+from app.core.live_capture import LiveVerifier
 
 # Page configuration
 st.set_page_config(
@@ -32,40 +33,50 @@ def init_session_state():
     if "drm_visible" not in st.session_state:
         st.session_state.drm_visible = False
 
-def process_single_file_logic(file_bytes_to_process):
-    # This is a placeholder for the actual processing logic
+def process_single_file_logic(file_bytes_to_process=None, live_text=None, live_image=None):
     progress_bar = st.progress(0)
     status_text = st.empty()
     
+    is_live = (live_text is not None and live_image is not None)
+    
     # Step 1 & 2: Load and Extract
-    status_text.text("1/5: 메모리 스트림 로딩 및 텍스트 추출 중 (PyMuPDF)...")
-    progress_bar.progress(20)
-    time.sleep(0.5) # UX delay
-    
-    pdf_result = process_pdf_stream(file_bytes_to_process)
-    
-    if not pdf_result["success"]:
-        st.error(f"PDF 로딩 실패: {pdf_result.get('error', '알 수 없는 오류')}")
-        st.stop()
-        
+    if not is_live:
+        status_text.text("1/5: 메모리 스트림 로딩 및 텍스트 추출 중 (PyMuPDF)...")
+        progress_bar.progress(20)
+        time.sleep(0.5)
+        pdf_result = process_pdf_stream(file_bytes_to_process)
+        if not pdf_result["success"]:
+            st.error(f"PDF 로딩 실패: {pdf_result.get('error', '알 수 없는 오류')}")
+            st.stop()
+        page_count = pdf_result["page_count"]
+    else:
+        status_text.text("1/5: 화면 메모리(Clipboard) 직접 후킹 및 텍스트 파싱 중...")
+        progress_bar.progress(20)
+        time.sleep(0.5)
+        page_count = "Live Capture"
+
     # Step 3: Masking
     status_text.text("2/5: 정규식 기반 민감정보(주민번호 등) 마스킹 처리 중...")
     progress_bar.progress(40)
-    masked_pages = apply_masking_to_pages(pdf_result["text_content"])
+    if not is_live:
+        masked_pages = apply_masking_to_pages(pdf_result["text_content"])
+        full_text = "\n".join([p["text"] for p in masked_pages])
+    else:
+        masked_pages = apply_masking_to_pages([{"page": 1, "text": live_text}])
+        full_text = "\n".join([p["text"] for p in masked_pages])
     time.sleep(0.5)
     
-    # Step 4: Signature Detection (Mocked)
+    # Step 4: Signature Detection
     status_text.text("3/5: 인감/서명(YOLOv8) 탐지 중 (로컬 모델)...")
     progress_bar.progress(60)
     vision_engine = SignatureDetector()
-    vision_result = vision_engine.detect_signature(file_bytes_to_process)
+    vision_result = vision_engine.detect_signature(file_bytes_to_process if not is_live else live_image)
     time.sleep(0.5)
     
-    # Step 5: LLM Verification (Mocked)
+    # Step 5: LLM Verification
     status_text.text("4/5: 로컬 LLM 논리 모순(의미론적 검증) 분석 중...")
     progress_bar.progress(80)
     llm_engine = LocalLLMVerifier()
-    full_text = "\n".join([p["text"] for p in masked_pages])
     llm_result = llm_engine.verify_document_logic(full_text)
     time.sleep(0.5)
         
@@ -85,7 +96,7 @@ def process_single_file_logic(file_bytes_to_process):
         
     st.markdown(status_html, unsafe_allow_html=True)
     
-    # Suspicious Highlight Preview (Phase 3)
+    # Suspicious Highlight Preview
     if llm_result["status"] != "정상" and "evidence_snippet" in llm_result:
         st.markdown("#### 🔍 의심 영역 원본 미리보기 (시각적 하이라이트)")
         evidence = llm_result["evidence_snippet"]
@@ -98,9 +109,12 @@ def process_single_file_logic(file_bytes_to_process):
             
         st.markdown(f"<div style='background-color: rgba(30,41,59,0.5); padding: 15px; border-radius: 10px; border-left: 4px solid #facc15; margin-bottom: 20px;'>{highlighted}</div>", unsafe_allow_html=True)
         
-        img_bytes = get_highlighted_pdf_page_image(file_bytes_to_process, evidence, page_num=0)
-        if img_bytes:
-            st.image(img_bytes, caption="원본 문서 내 의심 영역 자동 하이라이팅", use_container_width=True)
+        if not is_live:
+            img_bytes = get_highlighted_pdf_page_image(file_bytes_to_process, evidence, page_num=0)
+            if img_bytes:
+                st.image(img_bytes, caption="원본 문서 내 의심 영역 자동 하이라이팅", use_container_width=True)
+        else:
+            st.image(live_image, caption="현재 화면 스크린샷 (라이브 캡처본)", use_container_width=True)
     
     with st.expander("📄 추출 및 마스킹된 텍스트 확인 (1페이지 미리보기)"):
         if masked_pages:
@@ -111,7 +125,7 @@ def process_single_file_logic(file_bytes_to_process):
     result_data = {
         "검증 항목": ["문서 포맷 확인", "주민등록번호 마스킹", "인감/서명 존재 여부", "논리/의미론적 검증"],
         "상태": ["🟢 정상", "🟢 완료", "🟢 감지됨" if vision_result["has_signature"] else "🔴 미감지", "🟡 의심" if llm_result["status"] == "의심" else "🟢 정상"],
-        "세부 내용": [f"총 {pdf_result['page_count']}페이지 추출 성공", "정규식 패턴 적용 완료", f"신뢰도 {vision_result['confidence']*100:.1f}%", llm_result["reason"]]
+        "세부 내용": [f"총 {page_count}페이지 추출 성공" if not is_live else "라이브 메모리 스크래핑 성공", "정규식 패턴 적용 완료", f"신뢰도 {vision_result['confidence']*100:.1f}%", llm_result["reason"]]
     }
     
     df = pd.DataFrame(result_data)
@@ -160,7 +174,7 @@ def main():
     st.markdown("<hr style='border-color: #334155; margin: 30px 0;'>", unsafe_allow_html=True)
     
     # UI Tabs
-    tab1, tab2, tab3 = st.tabs(["🔒 DRM/핫폴더 일괄 처리", "📄 단일 파일 수동 검증", "⚙️ 환경 설정"])
+    tab1, tab2, tab3, tab4 = st.tabs(["🔒 DRM/핫폴더 일괄 처리", "👁️ 화면 라이브 직접 검증", "📄 단일 파일 수동 검증", "⚙️ 환경 설정"])
 
     # --- TAB 1: DRM & BATCH ---
     with tab1:
@@ -271,18 +285,43 @@ def main():
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
-    # --- TAB 2: SINGLE UPLOAD ---
+    # --- TAB 2: LIVE VERIFICATION ---
     with tab2:
+        st.markdown("### 👁️ 현재 띄워진 문서 직접 검증 (Live Verification)")
+        st.markdown("<p style='color: #94a3b8;'>파일 저장이 불가능한 강력한 보안 환경에서, 현재 열려있는 뷰어 화면의 텍스트와 이미지를 실시간으로 후킹하여 검증합니다.</p>", unsafe_allow_html=True)
+        
+        st.info("💡 **사용 방법:** 버튼을 누른 후, 3초 안에 사내 문서 뷰어(Acrobat 등) 창을 클릭하여 화면에 띄워주세요!")
+        
+        if st.button("현재 열린 문서 검증 시작", type="primary", use_container_width=True):
+            with st.status("라이브 캡처 준비 중...", expanded=True) as status:
+                for i in range(3, 0, -1):
+                    st.write(f"⏳ {i}초 뒤 캡처가 시작됩니다. 아크로뱃 창을 활성화해주세요!")
+                    time.sleep(1)
+                    
+                st.write("📸 화면 및 텍스트 데이터 추출 중...")
+                live_verifier = LiveVerifier()
+                cap_result = live_verifier.capture_live_state()
+                
+                if cap_result["success"]:
+                    status.update(label="라이브 데이터 후킹 성공!", state="complete", expanded=False)
+                    st.success("메모리에서 텍스트와 스크린샷 추출을 완료했습니다. 검증을 시작합니다.")
+                    process_single_file_logic(live_text=cap_result["raw_text"], live_image=cap_result["image_bytes"])
+                else:
+                    status.update(label="라이브 캡처 실패", state="error", expanded=True)
+                    st.error(cap_result.get("error", "캡처 도중 오류가 발생했습니다."))
+
+    # --- TAB 3: SINGLE UPLOAD ---
+    with tab3:
         st.markdown("### 📄 단일 파일 수동 업로드 검증")
         st.markdown("<p style='color: #94a3b8;'>DRM이 걸려있지 않은 일반 문서를 테스트합니다.</p>", unsafe_allow_html=True)
         uploaded_file = st.file_uploader("검증할 PDF 파일을 드래그 앤 드롭 하세요", type=['pdf'])
         if uploaded_file is not None:
             file_bytes_to_process = uploaded_file.read()
             st.info("메모리에 파일이 로드되었습니다. 검증을 시작합니다...")
-            process_single_file_logic(file_bytes_to_process)
+            process_single_file_logic(file_bytes_to_process=file_bytes_to_process)
 
-    # --- TAB 3: SETTINGS ---
-    with tab3:
+    # --- TAB 4: SETTINGS ---
+    with tab4:
         st.markdown("### ⚙️ 시스템 환경 설정")
         st.markdown("SaaS 운영자 및 로컬 시스템 설정을 관리합니다.")
         
