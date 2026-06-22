@@ -46,7 +46,7 @@ def process_pdf_stream(file_bytes: bytes, password: str = None, max_pages: int =
                 # If the document is large (>10 pages) we limit OCR to first few pages to avoid slowdown
                 if doc.page_count <= 10 or page_num < 5:
                     try:
-                        import easyocr, logging, io
+                        import easyocr, logging
                         logging.getLogger('easyocr').setLevel(logging.ERROR)
                         reader = easyocr.Reader(['ko', 'en'], gpu=False, verbose=False)
                         ocr_text = []
