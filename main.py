@@ -100,6 +100,24 @@ def process_single_file_logic(file_bytes_to_process=None, live_text=None, live_i
         
     st.markdown(status_html, unsafe_allow_html=True)
     
+    # Show Extracted Data Dashboard
+    if "extracted_data" in llm_result:
+        st.markdown("#### 📋 AI 추출 문서 핵심 정보 (Data Extraction)")
+        ext = llm_result["extracted_data"]
+        
+        col_ex1, col_ex2, col_ex3 = st.columns(3)
+        with col_ex1:
+            st.markdown(f"**문서 유형:** <span style='color:#38bdf8'>{ext.get('문서 유형', 'N/A')}</span>", unsafe_allow_html=True)
+            st.markdown(f"**계약자(고객명):** <span style='color:#38bdf8'>{ext.get('고객명(계약자)', 'N/A')}</span>", unsafe_allow_html=True)
+        with col_ex2:
+            st.markdown(f"**작성 일자:** <span style='color:#38bdf8'>{ext.get('작성 일자', 'N/A')}</span>", unsafe_allow_html=True)
+            st.markdown(f"**특이사항:** <span style='color:#fb7185'>{ext.get('특이사항', 'N/A')}</span>", unsafe_allow_html=True)
+        with col_ex3:
+            st.markdown(f"**신청 사유:**")
+            st.markdown(f"<div style='background-color:#1e293b; padding:8px; border-radius:5px;'>{ext.get('신청 사유', 'N/A')}</div>", unsafe_allow_html=True)
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+
     # Suspicious Highlight Preview
     if llm_result["status"] != "정상" and "evidence_snippet" in llm_result:
         st.markdown("#### 🔍 의심 영역 원본 미리보기 (시각적 하이라이트)")
