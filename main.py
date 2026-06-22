@@ -32,8 +32,12 @@ def init_session_state():
         st.session_state.hot_folder_path = "data/hot_folder"
     if "drm_visible" not in st.session_state:
         st.session_state.drm_visible = False
+    if "history_records" not in st.session_state:
+        st.session_state.history_records = []
+    if "uploader_key" not in st.session_state:
+        st.session_state.uploader_key = 0
 
-def process_single_file_logic(file_bytes_to_process=None, live_text=None, live_image=None):
+def process_single_file_logic(file_bytes_to_process=None, live_text=None, live_image=None, file_name="단일 캡처/업로드"):
     progress_bar = st.progress(0)
     status_text = st.empty()
     
@@ -142,6 +146,15 @@ def process_single_file_logic(file_bytes_to_process=None, live_text=None, live_i
             file_name="single_verification_result.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+        
+    # Append to history
+    from datetime import datetime
+    st.session_state.history_records.append({
+        "시간": datetime.now().strftime("%H:%M:%S"),
+        "파일명": file_name,
+        "상태": "🟢 정상" if llm_result["status"] == "정상" else ("🟡 의심" if llm_result["status"] == "의심" else "🔴 반려"),
+        "사유": llm_result["reason"]
+    })
 
 def main():
     init_session_state()
@@ -157,6 +170,26 @@ def main():
         st.markdown("##### 메뉴")
         st.button("📊 대시보드")
         st.button("🚪 로그아웃")
+        
+        st.markdown("---")
+        st.markdown("##### 📜 검증 이력 (History)")
+        if not st.session_state.history_records:
+            st.info("오늘 수행된 검증 내역이 없습니다.")
+        else:
+            history_df = pd.DataFrame(st.session_state.history_records)
+            st.dataframe(history_df, use_container_width=True, hide_index=True)
+            
+            excel_io = io.BytesIO()
+            history_df.to_excel(excel_io, index=False, engine='openpyxl')
+            excel_io.seek(0)
+            
+            st.download_button(
+                label="📥 전체 이력 다운로드",
+                data=excel_io,
+                file_name="verification_history.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
 
     # Dashboard Metrics
     col1, col2, col3, col4 = st.columns(4)
@@ -173,6 +206,12 @@ def main():
 
     st.markdown("<hr style='border-color: #334155; margin: 30px 0;'>", unsafe_allow_html=True)
     
+    col_reset1, col_reset2 = st.columns([8, 2])
+    with col_reset2:
+        if st.button("🔄 화면 및 세션 초기화", use_container_width=True, help="현재 화면에 떠 있는 텍스트와 이미지, 결과표를 깔끔하게 지웁니다. (사이드바 이력은 보존됨)"):
+            st.session_state.uploader_key += 1
+            st.rerun()
+            
     # UI Tabs
     tab1, tab2, tab3, tab4 = st.tabs(["🔒 DRM/핫폴더 일괄 처리", "👁️ 화면 라이브 직접 검증", "📄 단일 파일 수동 검증", "⚙️ 환경 설정"])
 
@@ -209,7 +248,7 @@ def main():
                         st.toast('DRM 해제 성공!', icon='✅')
                         # Start processing
                         st.info("파일이 준비되었습니다. 검증 파이프라인을 구동합니다.")
-                        process_single_file_logic(drm_result["file_bytes"])
+                        process_single_file_logic(file_bytes_to_process=drm_result["file_bytes"], file_name=drm_keyword)
                     else:
                         status.update(label="우회 실패", state="error", expanded=True)
                         st.error(drm_result["message"])
@@ -284,6 +323,16 @@ def main():
                     file_name="batch_verification_results.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
+                
+                # Append batch results to history
+                from datetime import datetime
+                for res in batch_results:
+                    st.session_state.history_records.append({
+                        "시간": datetime.now().strftime("%H:%M:%S"),
+                        "파일명": res["파일명"],
+                        "상태": res["상태"],
+                        "사유": res["LLM 의심사유"]
+                    })
 
     # --- TAB 2: LIVE VERIFICATION ---
     with tab2:
@@ -314,11 +363,11 @@ def main():
     with tab3:
         st.markdown("### 📄 단일 파일 수동 업로드 검증")
         st.markdown("<p style='color: #94a3b8;'>DRM이 걸려있지 않은 일반 문서를 테스트합니다.</p>", unsafe_allow_html=True)
-        uploaded_file = st.file_uploader("검증할 PDF 파일을 드래그 앤 드롭 하세요", type=['pdf'])
+        uploaded_file = st.file_uploader("검증할 PDF 파일을 드래그 앤 드롭 하세요", type=['pdf'], key=f"single_uploader_{st.session_state.uploader_key}")
         if uploaded_file is not None:
             file_bytes_to_process = uploaded_file.read()
             st.info("메모리에 파일이 로드되었습니다. 검증을 시작합니다...")
-            process_single_file_logic(file_bytes_to_process=file_bytes_to_process)
+            process_single_file_logic(file_bytes_to_process=file_bytes_to_process, file_name=uploaded_file.name)
 
     # --- TAB 4: SETTINGS ---
     with tab4:
