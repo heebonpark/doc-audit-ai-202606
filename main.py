@@ -153,12 +153,12 @@ def process_single_file_logic(file_bytes_to_process=None, live_text=None, live_i
             st.image(live_image, caption="현재 화면 스크린샷 (라이브 캡처본)", use_container_width=True)
             
     # Handwriting OCR Section
-    if "extracted_data" in llm_result and llm_result["extracted_data"].get("신청 사유") not in ["N/A", "null", ""]:
+    if "extracted_data" in llm_result:
         st.markdown("#### 🖋️ 수기록(Handwriting) 텍스트 변환 및 검증")
         st.markdown("<p style='color:#94a3b8; font-size: 14px;'>Vision OCR을 통해 사람이 직접 쓴 수기 영역을 크롭하여 판독합니다.</p>", unsafe_allow_html=True)
         
         ocr_engine = HandwritingOCREngine()
-        ocr_res = ocr_engine.extract_handwriting_mock(llm_result["extracted_data"]["신청 사유"])
+        ocr_res = ocr_engine.extract_handwriting_real(file_bytes_to_process, llm_result["extracted_data"].get("신청 사유", "N/A"))
         
         col_ocr1, col_ocr2 = st.columns([1, 1])
         with col_ocr1:
