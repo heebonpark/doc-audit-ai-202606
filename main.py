@@ -37,6 +37,9 @@ def init_session_state():
         st.session_state.history_records = []
     if "uploader_key" not in st.session_state:
         st.session_state.uploader_key = 0
+    # 0 = full processing, >0 limits pages for preview
+    if "max_pages" not in st.session_state:
+        st.session_state.max_pages = 0
 
 def process_single_file_logic(file_bytes_to_process=None, live_text=None, live_image=None, file_name="단일 캡처/업로드"):
     progress_bar = st.progress(0)

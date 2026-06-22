@@ -1,7 +1,91 @@
 import fitz  # PyMuPDF
 import io
+import re
 
-def process_pdf_stream(file_bytes: bytes, password: str = None) -> dict:
+def process_pdf_stream(file_bytes: bytes, password: str = None, max_pages: int = None) -> dict:
+    """
+    Process PDF from a memory stream using PyMuPDF.
+    Handles decryption if a password is provided or if it has a known standard password.
+    Optionally limit processing to the first `max_pages` pages for faster preview.
+    """
+    result = {
+        "success": False,
+        "is_encrypted": False,
+        "page_count": 0,
+        "metadata": {},
+        "text_content": [],
+        "error": None
+    }
+
+    try:
+        # Load PDF from memory stream
+        pdf_stream = io.BytesIO(file_bytes)
+        doc = fitz.open(stream=pdf_stream, filetype="pdf")
+
+        # Check encryption
+        if doc.needs_pass:
+            result["is_encrypted"] = True
+            if password:
+                doc.authenticate(password)
+            else:
+                result["error"] = "Password required to decrypt the PDF."
+                return result
+
+        result["metadata"] = doc.metadata
+        result["page_count"] = doc.page_count
+        total_pages = doc.page_count if max_pages is None else min(doc.page_count, max_pages)
+
+        # Extract text (with optional OCR on short/low‑info pages)
+        for page_num in range(total_pages):
+            page = doc[page_num]
+            # Get plain text
+            text = page.get_text("text").strip()
+
+            # Heuristic: run OCR only on short text or watermark pages *and* when total pages are small
+            if len(text) < 50 or "지원팀" in text or "워터마크" in text or "박희본" in text:
+                # If the document is large (>10 pages) we limit OCR to first few pages to avoid slowdown
+                if doc.page_count <= 10 or page_num < 5:
+                    try:
+                        import easyocr, logging, io
+                        logging.getLogger('easyocr').setLevel(logging.ERROR)
+                        reader = easyocr.Reader(['ko', 'en'], gpu=False, verbose=False)
+                        ocr_text = []
+                        for img_info in page.get_images(full=True):
+                            xref = img_info[0]
+                            base_image = doc.extract_image(xref)
+                            image_bytes = base_image["image"]
+                            res = reader.readtext(image_bytes, detail=0)
+                            ocr_text.extend(res)
+                        text += "\n" + " ".join(ocr_text)
+                    except ImportError:
+                        text += "\n[OCR 엔진(easyocr)이 설치되지 않아 이미지 텍스트를 읽을 수 없습니다]"
+
+            result["text_content"].append({
+                "page": page_num + 1,
+                "text": text
+            })
+            # Heuristic detection of handwritten snippets
+            if len(text) < 30 and re.search(r"[가-힣]{2,}", text):
+                result.setdefault("handwritten_blocks", []).append({
+                    "page": page_num + 1,
+                    "text": text
+                })
+            # Detect checkbox symbols
+            if re.search(r"[□☐☑■]", text):
+                result.setdefault("checkbox_blocks", []).append({
+                    "page": page_num + 1,
+                    "text": text
+                })
+
+        result["success"] = True
+
+    except Exception as e:
+        result["error"] = str(e)
+    finally:
+        if 'doc' in locals():
+            doc.close()
+
+    return result
     """
     Process PDF from a memory stream using PyMuPDF.
     Handles decryption if a password is provided or if it has a known standard password.
