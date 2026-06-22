@@ -60,6 +60,7 @@ class SmartDRMEngine:
             import win32com.client
             word = win32com.client.Dispatch("Word.Application")
             word.Visible = False
+            word.DisplayAlerts = 0 # 0 = wdAlertsNone (prevents hanging on dialogs)
             doc = word.Documents.Open(target_file, ConfirmConversions=False)
             doc.SaveAs(unlocked_path, FileFormat=17) # 17 = PDF
             doc.Close()
