@@ -29,6 +29,8 @@ def init_session_state():
         st.session_state.drm_strategy = "Acrobat"
     if "hot_folder_path" not in st.session_state:
         st.session_state.hot_folder_path = "data/hot_folder"
+    if "drm_visible" not in st.session_state:
+        st.session_state.drm_visible = False
 
 def process_single_file_logic(file_bytes_to_process):
     # This is a placeholder for the actual processing logic
@@ -176,7 +178,10 @@ def main():
                 load_drm_btn = st.button("파일 검색 및 자동 검증", type="primary")
                 
             if load_drm_btn:
-                drm_engine = SmartDRMEngine(primary_strategy=st.session_state.drm_strategy)
+                drm_engine = SmartDRMEngine(
+                    primary_strategy=st.session_state.drm_strategy,
+                    visible=st.session_state.drm_visible
+                )
                 with st.status("DRM 우회 엔진 가동 중...", expanded=True) as status:
                     st.write(f"현재 선택된 전략: {st.session_state.drm_strategy} COM")
                     st.write("파일 스캔 및 백그라운드 해제 프로세스 시작...")
@@ -292,12 +297,19 @@ def main():
                 help="Acrobat은 원본 유지가 잘 되지만 버전에 따라 백그라운드 저장이 막힐 수 있습니다. Word는 가장 확실하지만 레이아웃이 변형될 수 있습니다."
             )
             
+            selected_visible = st.checkbox(
+                "백그라운드 숨김 모드 해제 (디버깅 모드)", 
+                value=st.session_state.drm_visible,
+                help="체크하면 워드나 아크로뱃 창이 화면에 직접 보입니다. 엔진 가동 중 멈출 때 어떤 오류창(DRM 로그인 창 등)이 뜨는지 눈으로 확인할 수 있습니다."
+            )
+            
             st.subheader("2. 핫폴더(Hot Folder) 모니터링 경로")
             st.caption("자동 검증 대상이 모이는 드라이브 경로를 설정합니다.")
             selected_path = st.text_input("핫폴더 경로", value=st.session_state.hot_folder_path)
             
             if st.button("설정 저장"):
                 st.session_state.drm_strategy = selected_strategy
+                st.session_state.drm_visible = selected_visible
                 st.session_state.hot_folder_path = selected_path
                 st.toast('설정이 성공적으로 저장되었습니다.', icon='💾')
                 st.success("새로운 환경설정이 적용되었습니다. DRM 탭으로 이동하여 테스트해보세요!")
