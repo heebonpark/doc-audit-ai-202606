@@ -10,6 +10,7 @@ from app.core.pdf_processor import process_pdf_stream, get_highlighted_pdf_page_
 from app.core.masking import apply_masking_to_pages
 from app.core.vision_detector import SignatureDetector
 from app.core.llm_verifier import LocalLLMVerifier
+from app.core.ocr_engine import HandwritingOCREngine
 from app.core.ml_analyzer import MLAnomalyDetector
 from app.core.drm_helper import SmartDRMEngine
 from app.core.live_capture import LiveVerifier
@@ -111,8 +112,21 @@ def process_single_file_logic(file_bytes_to_process=None, live_text=None, live_i
             st.markdown(f"**계약자(고객명):** <span style='color:#38bdf8'>{ext.get('고객명(계약자)', 'N/A')}</span>", unsafe_allow_html=True)
         with col_ex2:
             st.markdown(f"**작성 일자:** <span style='color:#38bdf8'>{ext.get('작성 일자', 'N/A')}</span>", unsafe_allow_html=True)
-            st.markdown(f"**특이사항:** <span style='color:#fb7185'>{ext.get('특이사항', 'N/A')}</span>", unsafe_allow_html=True)
+            
+            # Cross-check Company Name
+            company_name = ext.get('상호(법인명)', '미기재')
+            match_html = ""
+            if company_name != "미기재" and file_name != "단일 캡처/업로드":
+                # Check if parsed company name is in the filename
+                if company_name.replace("주식회사", "").replace("(주)", "").strip() in file_name:
+                    match_html = " <span style='color:#4ade80; font-size:12px;'>[✅ 파일명 일치]</span>"
+                else:
+                    match_html = " <span style='color:#f87171; font-size:12px;'>[❌ 파일명 불일치]</span>"
+            
+            st.markdown(f"**상호(법인명):** <span style='color:#38bdf8'>{company_name}</span>{match_html}", unsafe_allow_html=True)
+            
         with col_ex3:
+            st.markdown(f"**특이사항:** <span style='color:#fb7185'>{ext.get('특이사항', 'N/A')}</span>", unsafe_allow_html=True)
             st.markdown(f"**신청 사유:**")
             st.markdown(f"<div style='background-color:#1e293b; padding:8px; border-radius:5px;'>{ext.get('신청 사유', 'N/A')}</div>", unsafe_allow_html=True)
         
@@ -137,7 +151,24 @@ def process_single_file_logic(file_bytes_to_process=None, live_text=None, live_i
                 st.image(img_bytes, caption="원본 문서 내 의심 영역 자동 하이라이팅", use_container_width=True)
         else:
             st.image(live_image, caption="현재 화면 스크린샷 (라이브 캡처본)", use_container_width=True)
-    
+            
+    # Handwriting OCR Section
+    if "extracted_data" in llm_result and llm_result["extracted_data"].get("신청 사유") not in ["N/A", "null", ""]:
+        st.markdown("#### 🖋️ 수기록(Handwriting) 텍스트 변환 및 검증")
+        st.markdown("<p style='color:#94a3b8; font-size: 14px;'>Vision OCR을 통해 사람이 직접 쓴 수기 영역을 크롭하여 판독합니다.</p>", unsafe_allow_html=True)
+        
+        ocr_engine = HandwritingOCREngine()
+        ocr_res = ocr_engine.extract_handwriting_mock(llm_result["extracted_data"]["신청 사유"])
+        
+        col_ocr1, col_ocr2 = st.columns([1, 1])
+        with col_ocr1:
+            st.markdown("**1. 원본 수기 이미지 (ROI Crop)**")
+            st.image(ocr_res["image_bytes"], use_container_width=True)
+        with col_ocr2:
+            st.markdown("**2. OCR 변환 텍스트 (EasyOCR/Vision API)**")
+            st.info(f"**인식된 텍스트:**\n\n> {ocr_res['ocr_text']}")
+            st.markdown(f"<span style='color:#94a3b8; font-size:13px;'>인식 신뢰도(Confidence): {ocr_res['confidence']*100:.1f}%</span>", unsafe_allow_html=True)
+            
     with st.expander("📄 추출 및 마스킹된 텍스트 확인 (1페이지 미리보기)"):
         if masked_pages:
             st.text(masked_pages[0]["text"][:1000] + "... (생략)")

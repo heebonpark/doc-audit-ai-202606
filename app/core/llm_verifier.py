@@ -35,6 +35,13 @@ class LocalLLMVerifier:
         name_match = re.search(r'(Name|성명|계약자)[:\s]+([^\n]+)', text_content, re.IGNORECASE)
         if name_match: extracted_data["고객명(계약자)"] = name_match.group(2).strip()
         
+        # Parse Company Name
+        company_match = re.search(r'(Company|상호|상호명|가맹점명|법인명)[:\s]+([^\n]+)', text_content, re.IGNORECASE)
+        if company_match:
+            extracted_data["상호(법인명)"] = company_match.group(2).strip()
+        else:
+            extracted_data["상호(법인명)"] = "미기재"
+        
         # Parse Date
         date_match = re.search(r'(Date|일자|날짜)[:\s]+([\d\-/\.]+)', text_content, re.IGNORECASE)
         if date_match: extracted_data["작성 일자"] = date_match.group(2).strip()
