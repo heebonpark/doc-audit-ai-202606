@@ -69,5 +69,5 @@ def parse_document_precise(text: str) -> Dict[str, str]:
         result["신청 사유"] = "N/A"
 
     # Optional: add raw JSON for debugging
-    result["_raw"] = json.dumps({"extracted": result}, ensure_ascii=False)
+
     return result
