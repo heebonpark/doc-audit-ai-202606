@@ -53,6 +53,7 @@ def process_pdf_stream(file_bytes: bytes, password: str = None) -> dict:
         result["error"] = str(e)
     finally:
         if 'doc' in locals():
+            doc.close()
             
     return result
 
