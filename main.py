@@ -11,6 +11,7 @@ from app.core.masking import apply_masking_to_pages
 from app.core.vision_detector import SignatureDetector
 from app.core.llm_verifier import LocalLLMVerifier
 from app.core.ml_analyzer import MLAnomalyDetector
+from app.core.drm_helper import find_and_open_drm_pdf
 
 # Page configuration
 st.set_page_config(
@@ -93,7 +94,7 @@ def main():
         progress_bar.progress(80)
         llm_engine = LocalLLMVerifier()
         # combine text for llm
-        full_text = "\\n".join([p["text"] for p in masked_pages])
+        full_text = "\n".join([p["text"] for p in masked_pages])
         llm_result = llm_engine.verify_document_logic(full_text)
         time.sleep(0.5)
             
