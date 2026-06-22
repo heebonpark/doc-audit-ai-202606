@@ -11,7 +11,7 @@ from app.core.masking import apply_masking_to_pages
 from app.core.vision_detector import SignatureDetector
 from app.core.llm_verifier import LocalLLMVerifier
 from app.core.ml_analyzer import MLAnomalyDetector
-from app.core.drm_helper import find_and_open_drm_pdf
+from app.core.drm_helper import find_and_unlock_drm_pdf
 
 # Page configuration
 st.set_page_config(
@@ -33,6 +33,20 @@ def main():
         </p>
     """, unsafe_allow_html=True)
 
+    with st.sidebar:
+        st.markdown("### 🔒 사내 DRM 파일 로드 지원")
+        st.caption("MS Word 백그라운드 제어를 통해 DRM 암호화를 조용하게 자동 해제하고 즉시 검증 파이프라인에 로드합니다.")
+        drm_keyword = st.text_input("검색할 파일 키워드", placeholder="예: sample_anomaly")
+        drm_path = st.text_input("검색 대상 폴더 경로", value="data/hot_folder")
+        
+        load_drm_btn = st.button("파일 검색 및 자동 검증 시작", type="primary")
+        
+        st.divider()
+        st.markdown("##### 메뉴")
+        st.button("⚙️ 설정")
+        st.button("📊 대시보드")
+        st.button("🚪 로그아웃")
+
     # Dashboard Metrics (Traffic Light System)
     col1, col2, col3, col4 = st.columns(4)
     
@@ -49,28 +63,40 @@ def main():
         st.metric(label="", value="3 건")
 
     st.markdown("<hr style='border-color: #334155; margin: 30px 0;'>", unsafe_allow_html=True)
-
-    # File Upload Section
-    st.markdown("### 📄 계약서/신청서 단일 파일 검증 (테스트)")
     
-    uploaded_file = st.file_uploader("검증할 PDF 파일을 드래그 앤 드롭 하세요", type=['pdf'])
+    # Common variables for the pipeline
+    file_bytes_to_process = None
+    
+    # 1. DRM Loader Logic
+    if load_drm_btn:
+        with st.spinner("DRM 파일을 찾고 보안을 해제하는 중입니다... (MS Word 백그라운드 구동 중)"):
+            drm_result = find_and_unlock_drm_pdf(drm_keyword, drm_path)
+            if drm_result["success"]:
+                st.success(drm_result["message"])
+                file_bytes_to_process = drm_result["file_bytes"]
+            else:
+                st.error(drm_result["message"])
+
+    # 2. Standard Upload Logic
+    st.markdown("### 📄 계약서/신청서 단일 파일 검증 (테스트)")
+    uploaded_file = st.file_uploader("검증할 PDF 파일을 드래그 앤 드롭 하세요 (일반 파일용)", type=['pdf'])
     
     if uploaded_file is not None:
-        st.info("파일이 메모리에 로드되었습니다. 검증을 시작합니다...")
+        file_bytes_to_process = uploaded_file.read()
+        
+    if file_bytes_to_process is not None:
+        st.info("파일이 메모리에 로드되었습니다. 자동 검증 파이프라인을 시작합니다...")
         
         # This is a placeholder for the actual processing logic
         progress_bar = st.progress(0)
         status_text = st.empty()
-        
-        # Real PyMuPDF processing
-        file_bytes = uploaded_file.read()
         
         # Step 1 & 2: Load and Extract
         status_text.text("1/5: 메모리 스트림 로딩 및 텍스트 추출 중 (PyMuPDF)...")
         progress_bar.progress(20)
         time.sleep(0.5) # UX delay
         
-        pdf_result = process_pdf_stream(file_bytes)
+        pdf_result = process_pdf_stream(file_bytes_to_process)
         
         if not pdf_result["success"]:
             st.error(f"PDF 로딩 실패: {pdf_result.get('error', '알 수 없는 오류')}")
@@ -86,7 +112,7 @@ def main():
         status_text.text("3/5: 인감/서명(YOLOv8) 탐지 중 (로컬 모델)...")
         progress_bar.progress(60)
         vision_engine = SignatureDetector()
-        vision_result = vision_engine.detect_signature(file_bytes)
+        vision_result = vision_engine.detect_signature(file_bytes_to_process)
         time.sleep(0.5)
         
         # Step 5: LLM Verification (Mocked)
@@ -129,7 +155,7 @@ def main():
             st.markdown(f"<div style='background-color: rgba(30,41,59,0.5); padding: 15px; border-radius: 10px; border-left: 4px solid #facc15; margin-bottom: 20px;'>{highlighted}</div>", unsafe_allow_html=True)
             
             # Visual PDF Image Preview
-            img_bytes = get_highlighted_pdf_page_image(file_bytes, evidence, page_num=0)
+            img_bytes = get_highlighted_pdf_page_image(file_bytes_to_process, evidence, page_num=0)
             if img_bytes:
                 st.image(img_bytes, caption="원본 문서 내 의심 영역 자동 하이라이팅", use_container_width=True)
         
